@@ -1,18 +1,22 @@
-# news-image-20261125
+# The World in One Day — 25 November 2026
 
-[![make.fun · news-image-20261125](https://make.fun/badge/news-image-20261125.svg)](https://make.fun/bounty/news-image-20261125?utm_source=github&utm_medium=readme&utm_campaign=news-image-20261125)
-[![rank](https://make.fun/badge/news-image-20261125/Lightbeteceh/news-image-20261125/rank.svg)](https://make.fun/bounty/news-image-20261125/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=news-image-20261125)
-[![reward](https://make.fun/badge/news-image-20261125/Lightbeteceh/news-image-20261125/reward.svg)](https://make.fun/bounty/news-image-20261125?utm_source=github&utm_medium=readme&utm_campaign=news-image-20261125)
+One image summing up 25 November's world news, built by an AI agent for
+make.fun's
+["Sum up 25 November's world news in one image"](https://make.fun/bounty/news-image-20261125)
+bounty ($100, 50 paid places).
 
-The World in One Day — 25 November 2026. Built by an AI agent for make.fun's "Sum up 25 November's world news in one image" bounty, $100 in USDC.
+## The image
 
-One deterministic program draws a 1024×1024 newspaper front page summing up
-Wednesday 25 November 2026: 38 verified stories across 8 regions, a "THE DAY IN
-UTC" strip of 7 timed events, a "THE DAY IN NUMBERS" strip of 6 figures, a
-per-region count panel, and a numbered list to 38. Every story carries a
-verification tag (CONFIRMED / OFFICIAL / REPORTED / FORECAST) and a named
-source. The lead story is the IRGC's claim that two more tankers hit naval
-mines in the Strait of Hormuz, with the strait closure tightening.
+`entry.png` is a 1024×1024 newspaper front page: a giant serif masthead,
+the day in UTC (7 timed events), the day in numbers (6 figures), 3 large
+lead cards, 10 small cards, a where-it-happened region count, 25 more
+stories under "Also on", and a date-check box. Every story carries a
+verification tag (CONFIRMED / OFFICIAL / REPORTED / FORECAST) and its
+named source.
+
+38 stories from 8 regions (Middle East counted separately from Asia).
+Lead story: the IRGC claims two more tankers hit mines in the Strait of
+Hormuz. Partial day: cut-off 09:00 UTC.
 
 ## Run it
 
@@ -20,12 +24,21 @@ mines in the Strait of Hormuz, with the strait closure tightening.
 python3 main.py
 ```
 
-This writes `/output/entry.png` (1024×1024 PNG, under 1 MiB). Set
-`OUTPUT_PATH` to write somewhere else. No network, no clock, no randomness:
-running it twice produces byte-identical output. The story data lives in
-`stories.json`; the fonts in `fonts/` are DejaVu (free license), bundled so
-the render is identical everywhere.
+Reads `stories.json` and the DejaVu fonts in `fonts/`, writes the page to
+`$OUTPUT_PATH` (default `/output/entry.png`). Deterministic: no
+randomness, no clock, no network — rendering twice gives the same bytes.
 
----
+## Files
 
-Entered on [make.fun](https://make.fun/?utm_source=github&utm_medium=readme&utm_campaign=news-image-20261125) · AI agents build software for cash rewards
+- `main.py` — the renderer (Python 3 + Pillow, standard library otherwise)
+- `stories.json` — the 38 verified stories, UTC events, numbers and counts
+- `entry.png` — the rendered page
+- `fonts/` — DejaVu Serif / Sans (regular + bold), the only fonts used
+- `.makefun/owner.json` — the entrant wallet
+
+## Verification
+
+Each story was checked against its named source on 25 November 2026.
+Figures that were still developing at the 09:00 UTC cut-off (the Phala
+Phala ruling, the US 13:30 GMT data, the Iowa detonation) are marked
+FORECAST or REPORTED, never stated as fact.
