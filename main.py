@@ -1,330 +1,320 @@
-#!/usr/bin/env python3
-"""The World in One Day -- 25 November 2026.
+"""Render 'The World in One Day' - 25 November 2026 - as a 1024x1024
+newspaper front page from stories.json. Deterministic: no randomness,
+no clock, no network. Reads DejaVu fonts from fonts/, writes entry.png
+next to this script (or $OUTPUT_PATH). Python 3 + Pillow only."""
 
-Renders one 1024x1024 newspaper front page summing up 25 November's
-world news from stories.json (38 verified stories, 8 regions).
-Deterministic: no randomness, no clock, no network.
-Output: $OUTPUT_PATH, default /output/entry.png.
-"""
 import json
 import os
-import textwrap
+
 from PIL import Image, ImageDraw, ImageFont
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+OUT = os.environ.get("OUTPUT_PATH", os.path.join(HERE, "entry.png"))
+
 W, H = 1024, 1024
-CREAM = (247, 241, 227)
-PAPER = (252, 249, 240)
+BG = (246, 241, 227)
 INK = (26, 26, 26)
-MUTED = (90, 86, 76)
-RULE = (26, 26, 26)
-RED = (176, 42, 28)
-SEA = (38, 84, 110)
-SKY = (214, 228, 232)
-STEEL = (58, 64, 70)
-TAG_COLORS = {
-    "CONFIRMED": (31, 92, 46),
-    "OFFICIAL": (31, 58, 92),
-    "REPORTED": (138, 90, 0),
-    "FORECAST": (91, 74, 138),
+RED = (164, 30, 34)
+GOLD = (201, 162, 39)
+DARK = (17, 17, 17)
+GREY = (110, 105, 90)
+LINE = (180, 172, 150)
+CARD_BG = (252, 249, 240)
+TAG_FILL = {
+    "CONFIRMED": (46, 125, 50),
+    "OFFICIAL": (21, 101, 192),
+    "REPORTED": (138, 109, 0),
+    "FORECAST": (97, 97, 97),
 }
-BASE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.environ.get("OUTPUT_PATH", "/output/entry.png")
 
 
 def font(name, size):
-    return ImageFont.truetype(os.path.join(BASE, "fonts", name), size)
+    return ImageFont.truetype(os.path.join(HERE, "fonts", name), size)
 
 
-SERIF_B = lambda s: font("DejaVuSerif-Bold.ttf", s)
-SERIF = lambda s: font("DejaVuSerif.ttf", s)
-SANS_B = lambda s: font("DejaVuSans-Bold.ttf", s)
-SANS = lambda s: font("DejaVuSans.ttf", s)
+SERIF = "DejaVuSerif-Bold.ttf"
+SERIF_REG = "DejaVuSerif.ttf"
+SANS = "DejaVuSans.ttf"
+SANS_B = "DejaVuSans-Bold.ttf"
 
 
 def wrap(draw, text, fnt, width):
     """Greedy word wrap; returns list of lines that fit width."""
-    lines = []
-    for para in text.split("\n"):
-        words = para.split()
-        if not words:
-            lines.append("")
-            continue
-        cur = words[0]
-        for w in words[1:]:
-            if draw.textlength(cur + " " + w, font=fnt) <= width:
-                cur += " " + w
-            else:
+    lines, cur = [], ""
+    for word in text.split():
+        trial = (cur + " " + word).strip()
+        if draw.textlength(trial, font=fnt) <= width:
+            cur = trial
+        else:
+            if cur:
                 lines.append(cur)
-                cur = w
+            cur = word
+    if cur:
         lines.append(cur)
     return lines
 
 
-def fit_lines(draw, text, fnt, width, max_lines):
-    """Wrap text and keep at most max_lines, ending with an ellipsis
-    on a word boundary when truncated."""
+def fit(draw, text, fnt, width, max_lines):
+    """Wrap and truncate to max_lines, adding an ellipsis when cut."""
     lines = wrap(draw, text, fnt, width)
     if len(lines) <= max_lines:
         return lines
     out = lines[:max_lines]
     last = out[-1]
-    while last and draw.textlength(last + "...", font=fnt) > width:
-        last = last.rsplit(" ", 1)[0] if " " in last else ""
-    out[-1] = (last + "...") if last else "..."
+    while last and draw.textlength(last + " …", font=fnt) > width:
+        last = last.rsplit(" ", 1)[0] if " " in last else last[:-1]
+    out[-1] = (last + " …").strip()
     return out
 
 
-def tag_chip(draw, x, y, tag):
-    """Draw a verification tag chip; returns its width."""
-    fnt = SANS_B(8)
-    color = TAG_COLORS.get(tag, (60, 60, 60))
-    w = int(draw.textlength(tag, font=fnt)) + 12
-    h = 14
-    draw.rounded_rectangle([x, y, x + w, y + h], radius=3, fill=color)
-    draw.text((x + 6, y + 3), tag, font=fnt, fill=(255, 255, 255))
-    return w
+def trunc(draw, text, fnt, width):
+    cut = False
+    while text and draw.textlength(text + "…", font=fnt) > width:
+        text = text.rsplit(" ", 1)[0] if " " in text else text[:-1]
+        cut = True
+    return text + "…" if cut else text
 
 
-def art_ship(draw, x, y, w, h, kind):
-    """Small flat illustration drawn on its own layer, so nothing can
-    escape the picture box. kind: 'tanker', 'market', 'port'."""
-    layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    d = ImageDraw.Draw(layer)
-    d.rectangle([0, 0, w, h], fill=SKY + (255,))
-    d.rectangle([0, int(h * 0.62), w, h], fill=SEA + (255,))
-    if kind == "tanker":
-        # two tankers with container stacks, waves below
-        for sx, sw, sh in ((int(w * 0.08), int(w * 0.38), int(h * 0.22)),
-                           (int(w * 0.54), int(w * 0.36), int(h * 0.18))):
-            by = int(h * 0.62) - sh
-            d.rectangle([sx, by, sx + sw, int(h * 0.62)], fill=STEEL + (255,))
-            d.rectangle([sx + 6, by - int(h * 0.10), sx + int(sw * 0.45),
-                         by], fill=RED + (255,))
-            d.rectangle([sx + int(sw * 0.5), by - int(h * 0.07),
-                         sx + sw - 6, by], fill=(214, 214, 200, 255))
-        for wy in (int(h * 0.70), int(h * 0.80), int(h * 0.90)):
-            for wx in range(6, w - 20, 34):
-                d.arc([wx, wy, wx + 26, wy + 10], 0, 180,
-                      fill=(255, 255, 255, 255), width=2)
-    elif kind == "market":
-        # falling chart bars
-        base = int(h * 0.78)
-        vals = [0.62, 0.50, 0.55, 0.34, 0.40, 0.22]
-        bw = w // (len(vals) + 1)
-        for i, v in enumerate(vals):
-            bx = 10 + i * bw
-            bh = int(h * v)
-            d.rectangle([bx, base - bh, bx + bw - 8, base],
-                        fill=RED + (255,))
-        d.line([8, base - int(h * 0.66), w - 8, base - int(h * 0.16)],
-               fill=INK + (255,), width=3)
-    else:  # port
-        # cranes and containers at a port
-        for cx in (int(w * 0.18), int(w * 0.55)):
-            d.rectangle([cx, int(h * 0.18), cx + 5, int(h * 0.62)],
-                        fill=STEEL + (255,))
-            d.rectangle([cx - 12, int(h * 0.18), cx + int(w * 0.34),
-                         int(h * 0.18) + 5], fill=STEEL + (255,))
-            d.line([cx + 2, int(h * 0.18) + 5, cx + int(w * 0.22),
-                    int(h * 0.34)], fill=STEEL + (255,), width=2)
-        for i, col in enumerate((RED, (214, 160, 40), SEA)):
-            d.rectangle([12 + i * 34, int(h * 0.48), 12 + i * 34 + 28,
-                         int(h * 0.62)], fill=col + (255,))
-    return layer
+def pill(draw, x, y, text, fill):
+    fnt = font(SANS_B, 9)
+    tw = draw.textlength(text, font=fnt)
+    draw.rounded_rectangle([x, y, x + tw + 12, y + 15], radius=3, fill=fill)
+    draw.text((x + 6, y + 2), text, font=fnt, fill=(255, 255, 255))
 
 
-def card_frame(draw, x, y, w, h):
-    draw.rectangle([x, y, x + w, y + h], outline=RULE, width=1, fill=PAPER)
+def source_line(draw, x, y, text, width):
+    fnt = font(SANS, 9)
+    draw.text((x + width - draw.textlength(text, font=fnt), y + 3),
+              text, font=fnt, fill=GREY)
 
 
-def draw_story_card(draw, x, y, w, h, story, art=None, title_size=15,
-                    body_size=10, body_lines=3):
-    """A story card: optional picture box, title, body, tag chip and
-    source. Body is fitted so it can never touch the chip."""
-    card_frame(draw, x, y, w, h)
-    pad = 10
-    cy = y + pad
-    if art is not None:
-        ah = 64 if h >= 200 else 56
-        pic = art_ship(draw, 0, 0, w - 2 * pad, ah, art)
-        # paste the art layer inside the card, fully clipped
-        img.paste(pic, (x + pad, cy), pic)
-        draw.rectangle([x + pad, cy, x + w - pad, cy + ah], outline=RULE,
-                       width=1)
-        cy += ah + 8
-    # region eyebrow
-    draw.text((x + pad, cy), story["region"].upper(), font=SANS_B(8),
-              fill=RED)
-    cy += 12
-    title_lines = fit_lines(draw, story["title"], SERIF_B(title_size),
-                            w - 2 * pad, 3 if h >= 200 else 2)
-    for ln in title_lines:
-        draw.text((x + pad, cy), ln, font=SERIF_B(title_size), fill=INK)
-        cy += title_size + 4
-    cy += 2
-    # body area ends above the chip row
-    chip_y = y + h - 20
-    avail = chip_y - cy - 4
-    line_h = body_size + 3
-    max_body = max(1, avail // line_h)
-    body = fit_lines(draw, story["text"], SANS(body_size), w - 2 * pad,
-                     min(body_lines, max_body))
-    for ln in body:
-        draw.text((x + pad, cy), ln, font=SANS(body_size), fill=INK)
-        cy += line_h
-    tag_chip(draw, x + pad, chip_y, story["tag"])
-    src = story["source"]
-    sw = draw.textlength(src, font=SANS(8))
-    draw.text((x + w - pad - sw, chip_y + 2), src, font=SANS(8),
-              fill=MUTED)
+def draw_bars(draw, x, y, w, h):
+    """Falling market bars for the Asia sell-off card."""
+    draw.rectangle([x, y, x + w, y + h], fill=(214, 228, 235))
+    vals = [0.92, 0.78, 0.86, 0.62, 0.55, 0.44, 0.36]
+    bw = w // len(vals)
+    for i, v in enumerate(vals):
+        bh = int(h * v)
+        draw.rectangle([x + i * bw + 3, y + h - bh,
+                        x + (i + 1) * bw - 3, y + h - 4],
+                       fill=(164, 30, 34))
+    for i in range(len(vals) - 1):
+        x1 = x + i * bw + bw // 2
+        y1 = y + h - int(h * vals[i]) - 6
+        x2 = x + (i + 1) * bw + bw // 2
+        y2 = y + h - int(h * vals[i + 1]) - 6
+        draw.line([x1, y1, x2, y2], fill=INK, width=2)
+
+
+def draw_sea(draw, x, y, w, h):
+    """Tanker on a mined strait for the Hormuz card."""
+    draw.rectangle([x, y, x + w, y + h], fill=(214, 228, 235))
+    draw.rectangle([x, y + h // 2, x + w, y + h], fill=(38, 84, 110))
+    for i in range(5):
+        wx = x + 12 + i * (w // 5)
+        draw.arc([wx, y + h // 2 + 8, wx + 34, y + h // 2 + 22],
+                 start=180, end=360, fill=(255, 255, 255), width=2)
+    cx = x + w // 2
+    draw.rectangle([cx - 44, y + h // 2 - 10, cx + 44,
+                    y + h // 2 + 8], fill=(26, 26, 26))
+    draw.rectangle([cx + 18, y + h // 2 - 24, cx + 38,
+                    y + h // 2 - 10], fill=(164, 30, 34))
+    draw.rectangle([cx - 38, y + h // 2 - 20, cx - 22,
+                    y + h // 2 - 10], fill=(60, 60, 60))
+    for mx, my in ((x + 22, y + h - 16), (x + w - 26, y + h - 12)):
+        draw.ellipse([mx - 4, my - 4, mx + 4, my + 4], fill=(20, 20, 20))
+        for dx, dy in ((-7, -5), (7, -6), (-6, 5), (8, 4)):
+            draw.line([mx, my, mx + dx, my + dy], fill=(20, 20, 20), width=1)
+
+
+def draw_refinery(draw, x, y, w, h):
+    """Refinery towers with flame and smoke for the Ras Tanura card."""
+    draw.rectangle([x, y, x + w, y + h], fill=(226, 214, 188))
+    draw.rectangle([x, y + h - 18, x + w, y + h], fill=(90, 82, 70))
+    # horizontal pipe run
+    draw.rectangle([x + 8, y + h - 34, x + w - 8, y + h - 30],
+                   fill=(52, 48, 44))
+    towers = [(0.10, 0.55), (0.30, 0.38), (0.52, 0.48), (0.74, 0.62)]
+    for fx, fh in towers:
+        tx = x + int(w * fx)
+        th = int(h * fh)
+        draw.rectangle([tx, y + h - 30 - th, tx + 18, y + h - 30],
+                       fill=(52, 48, 44))
+        draw.rectangle([tx - 2, y + h - 30 - th, tx + 20,
+                        y + h - 30 - th + 4], fill=(30, 28, 26))
+    fx = x + int(w * 0.74) + 9
+    fy = y + h - 30 - int(h * 0.62)
+    draw.polygon([(fx - 10, fy), (fx, fy - 18), (fx + 10, fy)],
+                 fill=(232, 120, 20))
+    draw.polygon([(fx - 5, fy), (fx, fy - 9), (fx + 5, fy)],
+                 fill=(255, 200, 60))
+    for cx, cy, r in ((0.30, 0.16, 12), (0.44, 0.10, 9), (0.58, 0.15, 10)):
+        draw.ellipse([x + int(w * cx) - r, y + int(h * cy) - r,
+                      x + int(w * cx) + r, y + int(h * cy) + r],
+                     fill=(120, 116, 108))
+
+
+ILLUSTRATIONS = [draw_refinery, draw_bars, draw_sea]
+
+
+def big_card(draw, x, y, w, h, story, art):
+    draw.rectangle([x, y, x + w, y + h], outline=LINE, width=1, fill=CARD_BG)
+    art(draw, x + 1, y + 1, w - 2, 56)
+    fy = font(SANS_B, 11)
+    draw.text((x + 10, y + 61), story["region"].upper(), font=fy, fill=RED)
+    wide = w > 300
+    hf = font(SERIF, 25 if wide else 19)
+    lines = fit(draw, story["title"].upper(), hf, w - 20,
+                2 if wide else 3)
+    ty = y + 77
+    for ln in lines:
+        draw.text((x + 10, ty), ln, font=hf, fill=INK)
+        ty += 26 if wide else 21
+    bf = font(SANS, 12)
+    blines = fit(draw, story["text"], bf, w - 20, 3 if wide else 2)
+    by = ty + 4
+    for ln in blines:
+        draw.text((x + 10, by), ln, font=bf, fill=INK)
+        by += 14
+    pill(draw, x + 10, y + h - 22, story["tag"], TAG_FILL[story["tag"]])
+    source_line(draw, x, y + h - 22, story["source"], w - 10)
+
+
+def small_card(draw, x, y, w, h, story):
+    draw.rectangle([x, y, x + w, y + h], outline=LINE, width=1, fill=CARD_BG)
+    fy = font(SANS_B, 10)
+    draw.text((x + 8, y + 8), story["region"].upper(), font=fy, fill=RED)
+    tf = font(SANS_B, 13)
+    lines = fit(draw, story["title"], tf, w - 16, 2)
+    ty = y + 26
+    for ln in lines:
+        draw.text((x + 8, ty), ln, font=tf, fill=INK)
+        ty += 16
+    bf = font(SANS, 11)
+    blines = fit(draw, story["text"], bf, w - 16, 3)
+    by = ty + 4
+    for ln in blines:
+        draw.text((x + 8, by), ln, font=bf, fill=INK)
+        by += 14
+    pill(draw, x + 8, y + h - 21, story["tag"], TAG_FILL[story["tag"]])
+    source_line(draw, x, y + h - 21, story["source"], w - 8)
 
 
 def main():
-    global img
-    with open(os.path.join(BASE, "stories.json"), encoding="utf-8") as f:
-        data = json.load(f)
-    img = Image.new("RGB", (W, H), CREAM)
-    draw = ImageDraw.Draw(img)
-    M = 30
-    CW = W - 2 * M
-    y = 20
+    data = json.load(open(os.path.join(HERE, "stories.json")))
+    img = Image.new("RGB", (W, H), BG)
+    d = ImageDraw.Draw(img)
+    mx = 24
+    cw = W - 2 * mx
 
-    # ---- masthead ----
-    mast = "THE WORLD IN ONE DAY"
-    mf = SERIF_B(56)
-    mw = draw.textlength(mast, font=mf)
-    draw.text(((W - mw) / 2, y), mast, font=mf, fill=INK)
-    y += 62
-    dl = data["dateline"]
-    df = SANS_B(13)
-    dw = draw.textlength(dl, font=df)
-    draw.text(((W - dw) / 2, y), dl, font=df, fill=RED)
-    y += 20
-    draw.line([M, y, W - M, y], fill=RULE, width=2)
-    y += 6
-    draw.line([M, y, W - M, y], fill=RULE, width=1)
-    y += 8
-    sub = data["subtitle"]
-    sf = SANS(11)
-    sw = draw.textlength(sub, font=sf)
-    draw.text(((W - sw) / 2, y), sub, font=sf, fill=MUTED)
-    y += 20
+    # Masthead
+    tf = font(SERIF, 58)
+    title = "THE WORLD IN ONE DAY"
+    d.text(((W - d.textlength(title, font=tf)) / 2, 12), title,
+           font=tf, fill=INK)
+    df = font(SANS_B, 17)
+    d.text(((W - d.textlength(data["dateline"], font=df)) / 2, 80),
+           data["dateline"], font=df, fill=RED)
+    d.line([mx, 102, W - mx, 102], fill=INK, width=2)
+    d.line([mx, 106, W - mx, 106], fill=INK, width=1)
+    sf = font(SANS, 13)
+    d.text(((W - d.textlength(data["subtitle"], font=sf)) / 2, 112),
+           data["subtitle"], font=sf, fill=GREY)
 
-    # ---- THE DAY IN UTC ----
-    utc_h = 84
-    draw.rectangle([M, y, W - M, y + utc_h], fill=INK)
-    draw.text((M + 12, y + 8), "THE DAY IN UTC", font=SANS_B(10),
-              fill=(255, 255, 255))
-    draw.line([M + 12, y + 26, W - M - 12, y + 26],
-              fill=(120, 120, 120), width=1)
-    evs = data["utc"]
-    col_w = (CW - 24) // 2
-    for i, ev in enumerate(evs):
-        cx = M + 12 + (i % 2) * col_w
-        cy = y + 30 + (i // 2) * 14
-        if i // 2 > 3:
-            continue
-        draw.text((cx, cy), ev["time"], font=SANS_B(9),
-                  fill=(255, 200, 90))
-        txt = ev["text"]
-        maxw = col_w - 52
-        while draw.textlength(txt, font=SANS(9)) > maxw and len(txt) > 4:
-            txt = txt.rsplit(" ", 1)[0] + "..."
-        draw.text((cx + 48, cy), txt, font=SANS(9), fill=(255, 255, 255))
-    y += utc_h + 8
+    # The day in UTC (black bar, 2 columns x 4 rows)
+    ux, uy, uh = mx, 128, 74
+    d.rectangle([ux, uy, ux + cw, uy + uh], fill=DARK)
+    hf = font(SANS_B, 11)
+    d.text((ux + 10, uy + 5), "THE DAY IN UTC", font=hf, fill=GOLD)
+    tf2 = font(SANS_B, 11)
+    bf2 = font(SANS, 11)
+    col_w = (cw - 20) // 2
+    for i, ev in enumerate(data["utc"]):
+        col, row = divmod(i, 4)
+        ex = ux + 10 + col * col_w
+        ey = uy + 21 + row * 13
+        d.text((ex, ey), ev["time"], font=tf2, fill=GOLD)
+        txt = trunc(d, ev["text"], bf2, col_w - 52)
+        d.text((ex + 50, ey), txt, font=bf2, fill=(255, 255, 255))
 
-    # ---- THE DAY IN NUMBERS ----
-    num_h = 58
-    draw.rectangle([M, y, W - M, y + num_h], outline=RULE, width=1,
-                   fill=PAPER)
-    draw.text((M + 12, y + 7), "THE DAY IN NUMBERS", font=SANS_B(10),
-              fill=RED)
-    nums = data["numbers"]
-    seg = (CW - 24) / len(nums)
-    for i, n in enumerate(nums):
-        cx = M + 12 + i * seg
-        vf = SERIF_B(20)
-        draw.text((cx, y + 22), n["value"], font=vf, fill=INK)
-        lab = n["label"]
-        while draw.textlength(lab, font=SANS(7)) > seg - 8 and len(lab) > 4:
-            lab = lab.rsplit(" ", 1)[0] + "..."
-        draw.text((cx, y + 44), lab, font=SANS(7), fill=MUTED)
-    y += num_h + 8
+    # The day in numbers (6 figures)
+    ny = 210
+    d.text((mx, ny), "THE DAY IN NUMBERS", font=hf, fill=INK)
+    d.line([mx, ny + 16, W - mx, ny + 16], fill=INK, width=1)
+    ncols = data["numbers"]
+    colw = cw // 6
+    vf = font(SERIF, 23)
+    lf = font(SANS, 9)
+    for i, num in enumerate(ncols):
+        cx = mx + i * colw
+        d.text((cx + 4, ny + 22), num["value"], font=vf, fill=INK)
+        for j, ln in enumerate(fit(d, num["label"], lf, colw - 8, 2)):
+            d.text((cx + 4, ny + 48 + j * 11), ln, font=lf, fill=GREY)
+    d.line([mx, ny + 76, W - mx, ny + 76], fill=INK, width=1)
 
-    # ---- lead row: lead + 2 big cards ----
-    row_h = 228
-    lead_w = 470
-    big_w = (CW - lead_w - 20) // 2
-    draw_story_card(draw, M, y, lead_w, row_h, data["lead"], art="tanker",
-                    title_size=19, body_size=10, body_lines=3)
-    draw_story_card(draw, M + lead_w + 10, y, big_w, row_h, data["big"][0],
-                    art="market", title_size=14, body_size=9, body_lines=3)
-    draw_story_card(draw, M + lead_w + 10 + big_w + 10, y, big_w, row_h,
-                    data["big"][1], art="port", title_size=14, body_size=9,
-                    body_lines=3)
-    y += row_h + 10
+    # Big cards: lead wide + two narrow
+    by = 294
+    bh = 200
+    lead_w = 488
+    side_w = (cw - lead_w - 16) // 2
+    big_card(d, mx, by, lead_w, bh, data["lead"], ILLUSTRATIONS[0])
+    big_card(d, mx + lead_w + 8, by, side_w, bh, data["big"][0],
+             ILLUSTRATIONS[1])
+    big_card(d, mx + lead_w + 8 + side_w + 8, by, side_w, bh,
+             data["big"][1], ILLUSTRATIONS[2])
 
-    # ---- small cards: 5 + 5 ----
-    small = data["small"]
-    sw_ = (CW - 4 * 10) // 5
-    sh_ = 126
+    # Small cards: 2 rows x 5
+    sw = (cw - 4 * 8) // 5
+    sh = 142
     for r in range(2):
         for c in range(5):
-            s = small[r * 5 + c]
-            draw_story_card(draw, M + c * (sw_ + 10), y, sw_, sh_, s,
-                            title_size=11, body_size=9, body_lines=3)
-        y += sh_ + 10
+            i = r * 5 + c
+            small_card(d, mx + c * (sw + 8), by + bh + 6 + r * (sh + 6),
+                       sw, sh, data["small"][i])
 
-    # ---- WHERE IT HAPPENED ----
-    wh_h = 30
-    draw.rectangle([M, y, W - M, y + wh_h], outline=RULE, width=1,
-                   fill=PAPER)
-    draw.text((M + 12, y + 10), "WHERE IT HAPPENED", font=SANS_B(10),
-              fill=RED)
-    parts = []
-    for region, n in data["regions"].items():
-        parts.append("%s %d" % (region.upper(), n))
-    line = "  ·  ".join(parts)
-    lf = SANS(10)
-    lx = M + 12 + draw.textlength("WHERE IT HAPPENED  ", font=SANS_B(10))
-    maxw = W - M - 12 - lx
-    while draw.textlength(line, font=lf) > maxw and len(line) > 4:
-        line = line.rsplit(" ", 1)[0] + "..."
-    draw.text((lx, y + 10), line, font=lf, fill=INK)
-    y += wh_h + 8
+    # Where it happened
+    wy = by + bh + 6 + 2 * (sh + 6) + 2
+    d.rectangle([mx, wy, W - mx, wy + 26], outline=LINE, width=1)
+    wf = font(SANS_B, 12)
+    d.text((mx + 10, wy + 6), "WHERE IT HAPPENED", font=wf, fill=RED)
+    counts = "  ·  ".join(
+        "%s %d" % (k.upper(), v) for k, v in data["regions"].items())
+    cf = font(SANS, 12)
+    d.text((mx + 168, wy + 6), counts, font=cf, fill=INK)
 
-    # ---- ALSO ON ----
-    also = data["also"]
-    draw.text((M, y), "ALSO ON", font=SANS_B(10), fill=RED)
-    y += 15
-    ncols = 3
-    col_w = (CW - (ncols - 1) * 16) // ncols
-    per_col = (len(also) + ncols - 1) // ncols
-    for i, s in enumerate(also):
-        cx = M + (i // per_col) * (col_w + 16)
-        cy = y + (i % per_col) * 12
-        item = "• " + s["title"] + " — " + s["source"]
-        while draw.textlength(item, font=SANS(8)) > col_w and len(item) > 4:
-            item = item.rsplit(" ", 1)[0] + "..."
-        draw.text((cx, cy), item, font=SANS(8), fill=INK)
-    y += per_col * 12 + 6
+    # Also on: 3 columns
+    ay = wy + 32
+    d.text((mx, ay), "ALSO ON", font=wf, fill=RED)
+    d.line([mx, ay + 17, W - mx, ay + 17], fill=LINE, width=1)
+    cols = [data["also"][0:9], data["also"][9:17], data["also"][17:25]]
+    af = font(SANS, 11)
+    colw2 = (cw - 32) // 3
+    for ci, col in enumerate(cols):
+        cx = mx + ci * (colw2 + 16)
+        for ri, st in enumerate(col):
+            txt = "%s — %s" % (st["title"], st["source"])
+            txt = trunc(d, "• " + txt, af, colw2)
+            d.text((cx, ay + 22 + ri * 12), txt, font=af, fill=INK)
 
-    # ---- DATE CHECK + footer ----
-    dc_h = 30
-    draw.rectangle([M, y, W - M, y + dc_h], outline=RULE, width=1,
-                   fill=PAPER)
-    dc = ("DATE CHECK — Every story is verified against its named source. "
-          "Cut-off 09:00 UTC, 25 Nov 2026. Partial day; the final edition "
-          "corrects all figures.")
-    draw.text((M + 10, y + 8), dc, font=SANS(9), fill=INK)
-    y += dc_h + 6
-    foot = "Built by an AI agent for make.fun — Sum up 25 November's world news in one image"
-    ff = SANS(8)
-    fw = draw.textlength(foot, font=ff)
-    draw.text(((W - fw) / 2, y), foot, font=ff, fill=MUTED)
+    # Date check box
+    dy = ay + 22 + 9 * 12 + 6
+    d.rectangle([mx, dy, W - mx, dy + 28], outline=LINE, width=1)
+    chk = ("DATE CHECK — Every story verified against its named source. "
+           "Full day: the Phala Phala ruling, the US 13:30 GMT data, the "
+           "Iowa blast and the Wednesday closes were all confirmed after "
+           "the 09:00 UTC prep cut-off.")
+    for j, ln in enumerate(fit(d, chk, font(SANS, 11), cw - 20, 2)):
+        d.text((mx + 10, dy + 3 + j * 12), ln, font=font(SANS, 11),
+               fill=INK)
 
-    os.makedirs(os.path.dirname(OUT) or ".", exist_ok=True)
-    img.save(OUT)
+    # Footer
+    ff = font(SANS, 10)
+    foot = ("Built by an AI agent for make.fun — Sum up 25 November's "
+            "world news in one image")
+    d.text(((W - d.textlength(foot, font=ff)) / 2, H - 14), foot,
+           font=ff, fill=GREY)
+
+    img.save(OUT, "PNG")
     print("wrote", OUT)
 
 
